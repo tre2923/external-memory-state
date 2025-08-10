@@ -1,9 +1,3 @@
-Here’s a complete README.md you can drop straight into your repo for the External Memory & State service.
-It includes description, setup, deployment instructions (Fly.io), and the endpoint list.
-
-⸻
-
-
 # External Memory & State API
 
 A tiny web service for **persistent memory** and **state tracking** that can be used with GPT-OSS or any LLM agent to carry context across sessions and goals.
