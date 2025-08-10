@@ -1,0 +1,101 @@
+<!doctype html>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>External Memory & State</title>
+<style>
+  body{font-family:system-ui,-apple-system,sans-serif;margin:16px;line-height:1.35}
+  input,button,textarea{font:inherit;padding:8px;margin:4px 0;width:100%}
+  .row{display:grid;gap:12px;grid-template-columns:1fr}
+  @media(min-width:760px){.row{grid-template-columns:1fr 1fr}}
+  pre{white-space:pre-wrap;background:#f6f6f6;padding:8px;border-radius:8px}
+  header{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  header input{flex:1}
+</style>
+<body>
+<header>
+  <input id="base" placeholder="https://YOURAPP.fly.dev">
+  <input id="key" placeholder="API key">
+  <button onclick="ping()">Ping</button>
+</header>
+
+<div class="row">
+  <div>
+    <h3>State</h3>
+    <input id="skey" placeholder="key (e.g., current_phase)">
+    <input id="sval" placeholder="value (e.g., testing)">
+    <button onclick="setState()">Set</button>
+    <button onclick="getState()">Get</button>
+    <pre id="stateOut"></pre>
+  </div>
+  <div>
+    <h3>Memory</h3>
+    <input id="mevent" placeholder="event (e.g., Deployed v1.2)">
+    <input id="mtags" placeholder="tags comma-separated (deploy,v1.2)">
+    <button onclick="addMem()">Add</button>
+    <input id="mquery" placeholder="search query (e.g., deploy)">
+    <button onclick="searchMem()">Search</button>
+    <pre id="memOut"></pre>
+  </div>
+</div>
+
+<h3>Goals</h3>
+<input id="gtext" placeholder="goal text (e.g., Launch MVP)">
+<button onclick="addGoal()">Add Goal</button>
+<input id="gid" placeholder="goal_id (e.g., 1)">
+<input id="gstatus" placeholder="status (new|in_progress|done)">
+<input id="gnote" placeholder="progress note (optional)">
+<button onclick="progress()">Update Progress</button>
+<pre id="goalOut"></pre>
+
+<h3>Context Export</h3>
+<button onclick="exportCtx()">Get Prompt Block</button>
+<pre id="ctxOut"></pre>
+
+<script>
+function headers(){ return { "Authorization":"Bearer "+s('key'), "Content-Type":"application/json" }; }
+function base(){ return s('base').replace(/\/$/,''); }
+function s(id){return document.getElementById(id).value}
+function o(id,txt){document.getElementById(id).textContent=typeof txt==="string"?txt:JSON.stringify(txt,null,2)}
+
+async function ping(){
+  try{ const r = await fetch(base()+"/", {headers:{}}); o("ctxOut", await r.text()); }
+  catch(e){ o("ctxOut", e.message); }
+}
+async function setState(){
+  const res = await fetch(base()+"/state/set",{method:"POST",headers:headers(),
+    body:JSON.stringify({key:s('skey'), value:s('sval')})});
+  o("stateOut", await res.text());
+}
+async function getState(){
+  const res = await fetch(base()+"/state/get?key="+encodeURIComponent(s('skey')), {headers:headers()});
+  o("stateOut", await res.text());
+}
+async function addMem(){
+  const tags = s('mtags').trim()? s('mtags').split(',').map(t=>t.trim()) : undefined;
+  const res = await fetch(base()+"/memory/add",{method:"POST",headers:headers(),
+    body:JSON.stringify({event:s('mevent'), tags})});
+  o("memOut", await res.text());
+}
+async function searchMem(){
+  const res = await fetch(base()+"/memory/search?q="+encodeURIComponent(s('mquery'))+"&limit=10", {headers:headers()});
+  o("memOut", await res.json());
+}
+async function addGoal(){
+  const res = await fetch(base()+"/goals/add",{method:"POST",headers:headers(),
+    body:JSON.stringify({goal:s('gtext')})});
+  o("goalOut", await res.text());
+}
+async function progress(){
+  const body = { goal_id: Number(s('gid')) };
+  if(s('gstatus').trim()) body.status = s('gstatus').trim();
+  if(s('gnote').trim()) body.note = s('gnote').trim();
+  const res = await fetch(base()+"/goals/progress",{method:"POST",headers:headers(),
+    body:JSON.stringify(body)});
+  o("goalOut", await res.text());
+}
+async function exportCtx(){
+  const res = await fetch(base()+"/context/export?max_tokens=1500", {headers:headers()});
+  const data = await res.json();
+  o("ctxOut", data.prompt_block || data);
+}
+</script>
+</body>

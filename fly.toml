@@ -1,4 +1,4 @@
-app = "external-mem-kit"
+app = "external-mem-kit"     # change this to your unique app name
 primary_region = "iad"
 
 [build]
@@ -6,6 +6,7 @@ primary_region = "iad"
 
 [env]
   DB_PATH = "/data/data.db"
+  ALLOWED_ORIGINS = "*"
 
 [[mounts]]
   source = "data"
@@ -13,7 +14,7 @@ primary_region = "iad"
 
 [[services]]
   internal_port = 8080
-  processes = ["app"]
   protocol = "tcp"
+  processes = ["app"]
   [[services.ports]]
     port = 80

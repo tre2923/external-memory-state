@@ -1,10 +1,15 @@
 import os, time
 from typing import Optional, List
 from fastapi import FastAPI, Depends, HTTPException, Header
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 import sqlite3
+from pathlib import Path
 
 API_KEY = os.getenv("API_KEY", "change-me")
+DB_PATH = os.getenv("DB_PATH", "/data/data.db")
 
 def auth(authorization: Optional[str] = Header(None)):
     if not authorization or not authorization.startswith("Bearer "):
@@ -14,14 +19,13 @@ def auth(authorization: Optional[str] = Header(None)):
         raise HTTPException(status_code=403, detail="Forbidden")
     return True
 
-DB_PATH = os.getenv("DB_PATH", "data.db")
-
 def db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
 def init():
+    Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
     conn = db()
     c = conn.cursor()
     c.execute("""CREATE TABLE IF NOT EXISTS state(
@@ -35,7 +39,22 @@ def init():
     conn.commit(); conn.close()
 
 init()
+
 app = FastAPI(title="External Memory & State")
+
+# CORS for your web UI / v0 / local testing
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "*").split(",")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Static UI (optional)
+if Path("static/index.html").exists():
+    app.mount("/static", StaticFiles(directory="static"), name="static")
 
 class KV(BaseModel):
     key: str
@@ -52,6 +71,12 @@ class ProgressIn(BaseModel):
     goal_id: int
     status: Optional[str] = None
     note: Optional[str] = None
+
+@app.get("/", response_class=HTMLResponse)
+def home():
+    if Path("static/index.html").exists():
+        return Path("static/index.html").read_text(encoding="utf-8")
+    return "<h1>External Memory & State</h1><p>Service running.</p>"
 
 @app.post("/state/set")
 def state_set(body: KV, _=Depends(auth)):
@@ -80,6 +105,7 @@ def memory_add(body: MemoryIn, _=Depends(auth)):
 
 @app.get("/memory/search")
 def memory_search(q: str, limit: int = 20, _=Depends(auth)):
+    limit = max(1, min(limit, 200))
     conn = db(); c = conn.cursor()
     rows = c.execute("SELECT rowid, event, tags FROM memory WHERE memory MATCH ? LIMIT ?",
                      (q, limit)).fetchall()
@@ -109,11 +135,10 @@ def goals_progress(body: ProgressIn, _=Depends(auth)):
 
 @app.get("/context/export")
 def context_export(max_tokens: int = 1500, _=Depends(auth)):
-    # Simple export: latest state + last N memory lines + active goals
     conn = db(); c = conn.cursor()
     state = c.execute("SELECT k, v FROM state ORDER BY updated_at DESC").fetchall()
-    goals = c.execute("SELECT id, goal, status FROM goals ORDER BY created_at DESC LIMIT 20").fetchall()
-    mem  = c.execute("SELECT event, tags FROM memory ORDER BY rowid DESC LIMIT 50").fetchall()
+    goals = c.execute("SELECT id, goal, status FROM goals ORDER BY created_at DESC LIMIT 50").fetchall()
+    mem  = c.execute("SELECT event, tags FROM memory ORDER BY rowid DESC LIMIT 100").fetchall()
     conn.close()
 
     lines = ["# State:"]
@@ -123,5 +148,4 @@ def context_export(max_tokens: int = 1500, _=Depends(auth)):
     lines += ["", "# Recent Memory:"]
     lines += [f"- {r['event']} ({r['tags']})" for r in mem]
     export = "\n".join(lines)
-    # (For MVP we don’t hard-trim by tokens; most OSS endpoints accept long prompts. Add summarization later.)
     return {"prompt_block": export[:20000]}
